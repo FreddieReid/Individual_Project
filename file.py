@@ -1,13 +1,13 @@
 import csv
 import json
-import requests
-from airflow.operators import UnzipOperator
-from airflow import csv
+from airflow import DAG
 import json
 import pandas as pd
+import numpy as np
 import io
-# from airflow_plugins.operators.zip import UnzipOperator
-# from airflow.operators import UnzipOperator
+import zipfile
+import requests
+import time
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.utils.trigger_rule import TriggerRule
@@ -15,23 +15,26 @@ from airflow.models import Variable
 from airflow.hooks.S3_hook import S3Hook
 from airflow.contrib.hooks import aws_lambda_hook
 from airflow.contrib.hooks.aws_hook import AwsHook
-
+from airflow.providers.amazon.aws.hooks.lambda_function import AwsLambdaHook
 
 from datetime import datetime
 from datetime import timedelta
 import logging
 
+
+
+
 default_args = {
     'start_date': datetime(2021, 3, 30),
     'owner': 'Airflow',
     'filestore_base': '/tmp/airflowtemp/',
-    'bucket_name': 'individual_twitter',
+    'bucket_name': 'individualtwitter',
     'prefix': 'test_folder',
     'aws_conn_id': "aws_default_FreddieReid",
     'email_on_failure': False,
     'email_on_retry': False,
-    # 'retries': 1,
-    'retries': 0,
+    'retries': 1,
+    #'retries': 0,
     'retry_delay': timedelta(minutes=5),
     'output_key': Variable.get("twitter_output", deserialize_json=True)['output_key']
 }
@@ -46,7 +49,7 @@ dag = DAG('twitter_individual',
 log = logging.getLogger(__name__)
 
 
-def collect_data():
+def collect_data(**kwargs):
 
     # get log information
     log.info('received:{0}'.format(kwargs))
@@ -77,11 +80,9 @@ def collect_data():
 
     # Let's convert the query result to a dictionary that we can iterate over
     tweets = json.loads(response.text)
+    tweets_data = tweets['data']
 
-    # turn tweets into dataframe
-    tweets_df = pd.DataFrame(tweets['data'])
-
-    return tweets_df
+    return tweets_data
 
 
 
@@ -104,10 +105,12 @@ def upload_to_s3(**kwargs):
     log.info('xcom from collecting data task:{0}'.format(
         collected_data))
 
+    # create dataframe for collected data
+    tweets_df = pd.DataFrame(collected_data)
 
     # Prepare the file to send to s3
     csv_buffer = io.StringIO()
-    collected_data.to_csv(csv_buffer, index=False)
+    tweets_df.to_csv(csv_buffer, index=False)
 
     # Save the pandas dataframe as a csv to s3
     s3 = s3.get_resource_type('s3')
