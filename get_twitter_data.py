@@ -7,7 +7,14 @@ import numpy as np
 import io
 import zipfile
 import requests
-import time
+import os
+import re
+from tqdm import tqdm
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer,PorterStemmer
+nltk.download('wordnet')
+
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.utils.trigger_rule import TriggerRule
@@ -33,8 +40,7 @@ default_args = {
     'aws_conn_id': "aws_default_FreddieReid",
     'email_on_failure': False,
     'email_on_retry': False,
-    'retries': 1,
-    #'retries': 0,
+    'retries': 0,
     'retry_delay': timedelta(minutes=5),
     'output_key': Variable.get("twitter_output", deserialize_json=True)['output_key']
 }
@@ -85,8 +91,6 @@ def collect_data(**kwargs):
     return tweets_data
 
 
-
-
 # store data in S3 bucket
 
 def upload_to_s3(**kwargs):
@@ -126,6 +130,60 @@ def upload_to_s3(**kwargs):
 
     log.info('Finished saving the scraped data to s3')
 
+# preprocess data
+
+def preprocessing(**kwargs):
+
+    # get unprocessed data from s3 bucket
+    s3 = S3Hook(kwargs['aws_conn_id'])
+    print("Reading csv file")
+
+    key = kwargs['output_key']
+
+    bytes_object = s3.read_key(key, kwargs['bucket_name'])
+
+    df = pd.read_csv(io.StringIO(bytes_object), index_col=0)
+    print("data has been read")
+
+    #make sure text is lower case
+    df["text"] = df['text'].str.lower()
+
+    # Change 't to 'not'
+    df["text"] = [re.sub(r"\'t", " not", str(x)) for x in df["text"]]
+
+    # Removing URL and Links
+    url_pattern = re.compile(r'https?://\S+|www\.\S+')
+    df["text"] = [url_pattern.sub(r' ', str(x)) for x in df["text"]]
+
+    html_pattern = re.compile('<.*?>')
+    df["text"] = [html_pattern.sub(r' ', str(x)) for x in df["text"]]
+
+    # Removing Number
+    df["text"] = [re.sub('[0-9]+', ' ', str(x)) for x in df["text"]]
+
+    # Isolate and remove punctuations except '?'
+    df["text"] = [re.sub(r'([\'\"\(\)\?\\\/\,])', r' \1 ', str(x)) for x in df["text"]]
+    df["text"] = [re.sub(r'[^\w\s\?!.]', ' ', str(x)) for x in df["text"]]
+
+    # Remove some special characters
+    df["text"] = [re.sub(r'([\_\;\:\|•«\n])', ' ', str(x)) for x in df["text"]]
+
+    # Remove stopwords
+    stop = stopwords.words('english')
+    df['text'] = df['text'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
+
+    #lemmatise words
+
+    lemmatizer = WordNetLemmatizer()
+    df["text"] = df['text'].apply(lambda x: " ".join([lemmatizer.lemmatize(w) for w in x.split()]))
+
+    # delete retweet symbol rt from text
+
+    df["text"] = df["text"].str.replace("rt ", "")
+
+    df = df.to_dict()
+
+    return df
 
 
 
@@ -151,8 +209,18 @@ upload_to_s3 = PythonOperator(
     dag=dag,
 )
 
+preprocessing =  PythonOperator(
+    task_id='preprocessing',
+    provide_context=True,
+    python_callable=preprocessing,
+    op_kwargs=default_args,
+    dag=dag,
+)
+
+
+
 # =============================================================================
 # 4. Indicating the order of the dags
 # =============================================================================
 
-collect_data >> upload_to_s3
+collect_data >> upload_to_s3 >> preprocessing
