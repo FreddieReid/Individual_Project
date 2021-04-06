@@ -131,15 +131,13 @@ def upload_to_s3(**kwargs):
 # preprocess data
 
 def lambda_preprocessing(**kwargs):
-    hook = AwsLambdaHook('File_upload_s3_Luke_Botbol',
+    hook = AwsLambdaHook('twitterpreprocessing',
                          region_name='eu-west-1',
                          log_type='None', qualifier='$LATEST',
                          invocation_type='RequestResponse',
                          config=None, aws_conn_id='aws_default_FreddieReid')
     response_1 = hook.invoke_lambda(payload='null')
     print('Response--->', response_1)
-
-
 
 
 
@@ -166,9 +164,9 @@ upload_to_s3 = PythonOperator(
 )
 
 preprocessing =  PythonOperator(
-    task_id='preprocessing',
+    task_id='lambda_preprocessing',
     provide_context=True,
-    python_callable=preprocessing,
+    python_callable=lambda_preprocessing,
     op_kwargs=default_args,
     dag=dag,
 )
@@ -179,4 +177,4 @@ preprocessing =  PythonOperator(
 # 4. Indicating the order of the dags
 # =============================================================================
 
-collect_data >> upload_to_s3 >> preprocessing
+collect_data >> upload_to_s3 >> lambda_preprocessing
