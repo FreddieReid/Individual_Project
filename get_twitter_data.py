@@ -9,12 +9,10 @@ import zipfile
 import requests
 import os
 import re
-from tqdm import tqdm
-import nltk
+# import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer,PorterStemmer
 nltk.download('wordnet')
-
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.utils.trigger_rule import TriggerRule
@@ -132,58 +130,16 @@ def upload_to_s3(**kwargs):
 
 # preprocess data
 
-def preprocessing(**kwargs):
+def lambda_preprocessing(**kwargs):
+    hook = AwsLambdaHook('File_upload_s3_Luke_Botbol',
+                         region_name='eu-west-1',
+                         log_type='None', qualifier='$LATEST',
+                         invocation_type='RequestResponse',
+                         config=None, aws_conn_id='aws_default_FreddieReid')
+    response_1 = hook.invoke_lambda(payload='null')
+    print('Response--->', response_1)
 
-    # get unprocessed data from s3 bucket
-    s3 = S3Hook(kwargs['aws_conn_id'])
-    print("Reading csv file")
 
-    key = kwargs['output_key']
-
-    bytes_object = s3.read_key(key, kwargs['bucket_name'])
-
-    df = pd.read_csv(io.StringIO(bytes_object), index_col=0)
-    print("data has been read")
-
-    #make sure text is lower case
-    df["text"] = df['text'].str.lower()
-
-    # Change 't to 'not'
-    df["text"] = [re.sub(r"\'t", " not", str(x)) for x in df["text"]]
-
-    # Removing URL and Links
-    url_pattern = re.compile(r'https?://\S+|www\.\S+')
-    df["text"] = [url_pattern.sub(r' ', str(x)) for x in df["text"]]
-
-    html_pattern = re.compile('<.*?>')
-    df["text"] = [html_pattern.sub(r' ', str(x)) for x in df["text"]]
-
-    # Removing Number
-    df["text"] = [re.sub('[0-9]+', ' ', str(x)) for x in df["text"]]
-
-    # Isolate and remove punctuations except '?'
-    df["text"] = [re.sub(r'([\'\"\(\)\?\\\/\,])', r' \1 ', str(x)) for x in df["text"]]
-    df["text"] = [re.sub(r'[^\w\s\?!.]', ' ', str(x)) for x in df["text"]]
-
-    # Remove some special characters
-    df["text"] = [re.sub(r'([\_\;\:\|•«\n])', ' ', str(x)) for x in df["text"]]
-
-    # Remove stopwords
-    stop = stopwords.words('english')
-    df['text'] = df['text'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
-
-    #lemmatise words
-
-    lemmatizer = WordNetLemmatizer()
-    df["text"] = df['text'].apply(lambda x: " ".join([lemmatizer.lemmatize(w) for w in x.split()]))
-
-    # delete retweet symbol rt from text
-
-    df["text"] = df["text"].str.replace("rt ", "")
-
-    df = df.to_dict()
-
-    return df
 
 
 
