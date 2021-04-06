@@ -9,10 +9,6 @@ import zipfile
 import requests
 import os
 import re
-# import nltk
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer,PorterStemmer
-nltk.download('wordnet')
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.utils.trigger_rule import TriggerRule
@@ -130,7 +126,7 @@ def upload_to_s3(**kwargs):
 
 # preprocess data
 
-def lambda_preprocessing(**kwargs):
+def lambda_preprocessing():
     hook = AwsLambdaHook('twitterpreprocessing',
                          region_name='eu-west-1',
                          log_type='None', qualifier='$LATEST',
@@ -163,7 +159,7 @@ upload_to_s3 = PythonOperator(
     dag=dag,
 )
 
-preprocessing =  PythonOperator(
+lambda_preprocessing = PythonOperator(
     task_id='lambda_preprocessing',
     provide_context=True,
     python_callable=lambda_preprocessing,
