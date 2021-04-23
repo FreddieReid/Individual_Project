@@ -6,7 +6,7 @@ import numpy
 
 
 def lambda_handler(event, context):
- rom S3 bucket
+    #get data from rom S3 bucket
 
     df = wr.s3.read_csv(path="s3://individualtwitter/twitter_output.csv")
 
@@ -53,7 +53,20 @@ def lambda_handler(event, context):
 
     df["text"] = df["text"].str.replace("rt ", "")
 
-    wr.s3.to_csv(df, path="s3://individualtwitter/preprocessed_data.csv")
+    #delete tweets that are likely spam
+
+
+    # create list of words which often occur in spam tweets
+
+    spam_words = ["free", "check", "giveaway", "gift", "present", "subscribe", "follow", "retweet", "luck", 'win']
+
+    # only select rows which do not include spam words
+
+    new_df = df[~df["text"].str.contains('|'.join(spam_words))]
+
+    # update bucket with new preprocessed data
+
+    wr.s3.to_csv(new_df, path="s3://individualtwitter/preprocessed_data.csv")
 
 
 

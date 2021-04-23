@@ -1,5 +1,4 @@
 import csv
-import json
 from airflow import DAG
 import json
 import pandas as pd
@@ -16,7 +15,10 @@ from airflow.models import Variable
 from airflow.hooks.S3_hook import S3Hook
 from airflow.contrib.hooks import aws_lambda_hook
 from airflow.contrib.hooks.aws_hook import AwsHook
+from airflow import providers
 from airflow.providers.amazon.aws.hooks.lambda_function import AwsLambdaHook
+from airflow.providers.google.cloud.hooks.cloud_storage_transfer_service import CloudDataTransferServiceHook
+
 
 from datetime import datetime
 from datetime import timedelta
@@ -32,6 +34,7 @@ default_args = {
     'bucket_name': 'individualtwitter',
     'prefix': 'test_folder',
     'aws_conn_id': "aws_default_FreddieReid",
+    'bearer_token': Variable.get("bearer_token", deserialize_json=True)['bearer_token'],
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 0,
@@ -40,7 +43,7 @@ default_args = {
 }
 
 dag = DAG('twitter_individual',
-      description = 'Test postgres operations',
+      description = 'get twitter data',
       schedule_interval = '@daily',
       catchup = False,
       default_args = default_args,
@@ -58,7 +61,7 @@ def collect_data(**kwargs):
     task_instance = kwargs['ti']
 
     # collect Twitter data from API
-    bearer_token = 'AAAAAAAAAAAAAAAAAAAAAFs8MwEAAAAAy409qnDsuqPzJnGPC5CHQU%2BGm2w%3DahpO3CFrdFGF6cAL2HHqnOjVkSY0q5ujLEbw0Whxk5QoTrfK26'
+    bearer_token = kwargs["bearer_token"]
 
     # parameters for API search
     query = "bitcoin"
@@ -77,10 +80,9 @@ def collect_data(**kwargs):
     # Does the request to get the most recent tweets
     response = requests.get('https://api.twitter.com/2/tweets/search/recent', headers=headers, params=params)
 
-
     # Let's convert the query result to a dictionary that we can iterate over
     tweets = json.loads(response.text)
-    tweets_data = tweets['data']
+    tweets_data = tweets["data"]
 
     return tweets_data
 
@@ -126,7 +128,7 @@ def upload_to_s3(**kwargs):
 
 # preprocess data
 
-def lambda_preprocessing():
+def lambda_preprocessing(**kwargs):
     hook = AwsLambdaHook('twitterpreprocessing',
                          region_name='eu-west-1',
                          log_type='None', qualifier='$LATEST',
@@ -135,6 +137,7 @@ def lambda_preprocessing():
     response_1 = hook.invoke_lambda(payload='null')
     print('Response--->', response_1)
 
+def create_sentiment_labels(**kwargs):
 
 
 # =============================================================================
@@ -167,10 +170,20 @@ lambda_preprocessing = PythonOperator(
     dag=dag,
 )
 
+create_sentiment_labels = PythonOperator(
+    task_id='create_sentiment_labels',
+    provide_context=True,
+    python_callable=create_sentiment_labels,
+    op_kwargs=default_args,
+    dag=dag,
+)
+
+
+
 
 
 # =============================================================================
 # 4. Indicating the order of the dags
 # =============================================================================
 
-collect_data >> upload_to_s3 >> lambda_preprocessing
+collect_data >> upload_to_s3 >> lambda_preprocessing >> create_sentiment_labels
