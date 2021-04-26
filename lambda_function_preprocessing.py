@@ -64,6 +64,9 @@ def lambda_handler(event, context):
 
     new_df = df[~df["text"].str.contains('|'.join(spam_words))]
 
+    #reset index
+    new_df = new_df.reset_index(drop=True)
+
     # update bucket with new preprocessed data
 
     wr.s3.to_csv(new_df, path="s3://individualtwitter/preprocessed_data.csv")

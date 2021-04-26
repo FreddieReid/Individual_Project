@@ -138,6 +138,13 @@ def lambda_preprocessing(**kwargs):
     print('Response--->', response_1)
 
 def create_sentiment_labels(**kwargs):
+    hook = AwsLambdaHook('textblob',
+                         region_name='eu-west-1',
+                         log_type='None', qualifier='$LATEST',
+                         invocation_type='RequestResponse',
+                         config=None, aws_conn_id='aws_default_FreddieReid')
+    response_1 = hook.invoke_lambda(payload='null')
+    print('Response--->', response_1)
 
 
 # =============================================================================
