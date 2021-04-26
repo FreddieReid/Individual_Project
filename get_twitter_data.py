@@ -146,6 +146,16 @@ def create_sentiment_labels(**kwargs):
     response_1 = hook.invoke_lambda(payload='null')
     print('Response--->', response_1)
 
+def collect_process_label_reddit_data(**kwargs):
+    hook = AwsLambdaHook('redditbitcoin',
+                         region_name='eu-west-1',
+                         log_type='None', qualifier='$LATEST',
+                         invocation_type='RequestResponse',
+                         config=None, aws_conn_id='aws_default_FreddieReid')
+    response_1 = hook.invoke_lambda(payload='null')
+    print('Response--->', response_1)
+
+
 
 # =============================================================================
 # 3. Set up the dags
@@ -185,7 +195,13 @@ create_sentiment_labels = PythonOperator(
     dag=dag,
 )
 
-
+collect_process_label_reddit_data = PythonOperator(
+    task_id='collect_process_label_reddit_data',
+    provide_context=True,
+    python_callable=collect_process_label_reddit_data,
+    op_kwargs=default_args,
+    dag=dag,
+)
 
 
 
@@ -193,4 +209,4 @@ create_sentiment_labels = PythonOperator(
 # 4. Indicating the order of the dags
 # =============================================================================
 
-collect_data >> upload_to_s3 >> lambda_preprocessing >> create_sentiment_labels
+collect_data >> upload_to_s3 >> lambda_preprocessing >> create_sentiment_labels >> collect_process_label_reddit_data

@@ -98,7 +98,7 @@ def lambda_handler(event, context):
     # create sentiment classes based on score (1 positive, -1 negative)
 
     def sentiment(new_df):
-        if new_df["sentiment_score"] >= 0.5:
+        if new_df["sentiment_score"] >= 0:
             return 1
         else:
             return -1
