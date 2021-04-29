@@ -117,5 +117,5 @@ def lambda_handler(event, context):
 
     sentiment_verdict(new_df["sentiment"])
 
-    wr.s3.to_csv(new_df, path="s3://individualtwitter/reddit_labelled_data.csv")
+    wr.s3.to_csv(new_df, path="s3://individualtwitter/reddit/reddit_labelled_data.csv")
 

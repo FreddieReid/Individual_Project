@@ -56,7 +56,7 @@ def lambda_handler(event, context):
 
     # update bucket with new preprocessed data
 
-    wr.s3.to_csv(df, path="s3://individualtwitter/labelled_data.csv")
+    wr.s3.to_csv(df, path="s3://individualtwitter/twitter/labelled_data.csv")
 
 
 
