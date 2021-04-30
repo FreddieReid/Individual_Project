@@ -33,13 +33,11 @@ default_args = {
     'prefix': 'test_folder',
     'aws_conn_id': "aws_default_FreddieReid",
     'bearer_token': Variable.get("bearer_token", deserialize_json=True)['bearer_token'],
-    'postgres_conn_id': 'postgres_conn_id_FreddieReid',
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 0,
     'retry_delay': timedelta(minutes=5),
     'output_key': Variable.get("twitter_output", deserialize_json=True)['output_key'],
-    'db_name': Variable.get("schema_postgres_FreddieReid", deserialize_json=True)['db_name']
 }
 
 dag = DAG('twitter_individual',
@@ -51,49 +49,17 @@ dag = DAG('twitter_individual',
 
 log = logging.getLogger(__name__)
 
-
-#def create_postgres_tables(**kwargs):
-#    pg_hook = PostgresHook(postgres_conn_id=kwargs["postgres_conn_id"], schema=kwargs['db_name'])
-#    conn = pg_hook.get_conn()
-#    cursor = conn.cursor()
-
-#    sql_queries = """
-#        CREATE SCHEMA IF NOT EXISTS bitcoin_info;
-#        DROP TABLE IF EXISTS bitcoin_info.recent_tweets;
-#        CREATE TABLE bitcoin_info.recent_tweets(
-#            id numeric,
-#            text varchar,
-#            sentiment_score numeric,
-#            sentiment numeric
-#        );
-#
-#        DROP TABLE IF EXISTS bitcoin_info.recent_reddit;
-#        CREATE TABLE bitcoin_info.recent_reddit(
-#            id numeric,
-#            text varchar,
-#            sentiment_score numeric,
-#            sentiment numeric
-#        );
-#        """
-
-#    cursor.execute(sql.queries)
-#    conn.commit()
-#    log.info("created schema and tables")
-
-
 def collect_data(**kwargs):
 
     # get log information
     log.info('received:{0}'.format(kwargs))
     log.info('default arguments received:{0}'.format(kwargs))
 
-    task_instance = kwargs['ti']
-
     # collect Twitter data from API
     bearer_token = kwargs["bearer_token"]
 
     # parameters for API search
-    query = "bitcoin"
+    query = "bitcoin lang:en"
     max_results = 100
 
     # Prepare the headers to pass the authentication to Twitter's api
@@ -266,15 +232,54 @@ def create_summary_document(**kwargs):
 
     frame = pd.DataFrame({'text': [a, b], 'avg_sentiment': [average_twitter_sentiment, average_reddit_sentiment]})
 
+    # create dataframe with summary statistics
+
+    summary_twitter = pd.DataFrame(twitter_df["sentiment_score"].describe())
+    summary_reddit = pd.DataFrame(reddit_df["sentiment_score"].describe())
+
+    # rename column names
+    summary_twitter = summary_twitter.rename({"sentiment_score" : "Sentiment Summary Twitter"}, axis =1)
+    summary_reddit = summary_reddit.rename({"sentiment_score": "Sentiment Summary Reddit"}, axis=1)
+
+
+
     # Prepare the file to send to s3
     csv_buffer = io.StringIO()
+    csv_buffer1 = io.StringIO()
+    csv_buffer2 = io.StringIO()
+
+    # add index to summary stats
+
+    summary_twitter["index"] = summary_twitter.index
+    summary_reddit["index"] = summary_reddit.index
+
+    # set index column to index
+    summary_twitter.set_index("index")
+    summary_reddit.set_index("index")
+
+    #rearrange columns
+
+    cols = summary_twitter.columns.to_list()[::-1]
+    cols1 = summary_reddit.columns.to_list()[::-1]
+
+    summary_twitter = pd.DataFrame(summary_twitter, columns=cols)
+    summary_reddit = pd.DataFrame(summary_reddit, columns=cols1)
+
+    # create stringIO format
+
     frame.to_csv(csv_buffer, index=False)
+    summary_twitter.to_csv(csv_buffer1, index=False)
+    summary_reddit.to_csv(csv_buffer2, index=False)
 
     # Save the pandas dataframe as a csv to s3
     s3 = s3.get_resource_type('s3')
 
     # Get the data type object from pandas dataframe, key and connection object to s3 bucket
     data = csv_buffer.getvalue()
+    data1 = csv_buffer1.getvalue()
+    data2 = csv_buffer2.getvalue()
+
+    data_full = (data + data1 + data2)
 
     bucket_name = kwargs['bucket_name']
     key1 = "summary_info.csv"
@@ -283,20 +288,9 @@ def create_summary_document(**kwargs):
     object = s3.Object(bucket_name, key1)
 
     # Write the file to S3 bucket in specific path defined in key
-    object.put(Body=data)
+    object.put(Body=data_full)
 
     log.info('Finished saving summary data to s3')
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -311,13 +305,6 @@ def create_summary_document(**kwargs):
 
 # these call the functions we created above
 
-#create_postgres_tables = PythonOperator(
-#    task_id='create_postgres_tables',
-#    provide_context=True,
-#    python_callable=create_postgres_tables,
-#    op_kwargs=default_args,
-#    dag=dag,
-#)
 
 collect_data =  PythonOperator(
     task_id='collect_data',
